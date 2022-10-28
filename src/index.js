@@ -22,6 +22,7 @@ const guiOptions = {
   ambientColor: 0x000888,
   directionalColor: 0xff1600,
   rgbShiftAmount: 0.002,
+  pixelize: false,
   // plane params
   metalness: 0.99,
   roughness: 0.76,
@@ -65,7 +66,11 @@ const lightDir = {
 
 // initialize core threejs components
 let scene = new THREE.Scene()
-let renderer = createRenderer({ antialias: true, alpha: true })
+// deactivating antialias gives performance boost
+let renderer = createRenderer({ antialias: false, alpha: true }, (rdr) => {
+  // see https://discourse.threejs.org/t/renderer-info-render-triangles-always-on-0/28916
+  rdr.info.autoReset = false
+})
 let camera = createCamera(75, 0.1, 110, { x: 0, y: 0, z: 2.4 })
 let rgbShiftPass = new ShaderPass(RGBShiftShader)
 let composer = createComposer(renderer, scene, camera, (comp) => {
@@ -282,6 +287,9 @@ let app = {
     })
     gui.add(guiOptions, "rgbShiftAmount", 0, 0.01, 0.0005).onChange((val) => {
       rgbShiftPass.uniforms["amount"].value = val
+    })
+    gui.add(guiOptions, "pixelize").onChange((val) => {
+      this.composer.setPixelRatio(window.devicePixelRatio * (val ? 0.1 : 1))
     })
 
     planeFolder = gui.addFolder(`Plane`)

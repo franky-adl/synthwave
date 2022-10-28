@@ -103,6 +103,12 @@ export const setupApp = (app, scene, renderer, camera, enableAnimation = false, 
             return true
         })
         .then(animate)
+        .then(() => {
+            // debugging info
+            renderer.info.reset()
+            // not sure if reliable enough, numbers change everytime...
+            console.log("Renderer info", renderer.info)
+        })
         .catch((error) => {
             console.log(error);
         });
