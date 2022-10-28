@@ -8,37 +8,40 @@ import { RGBShiftShader } from "three/examples/jsm/shaders/RGBShiftShader"
 
 // Your deps
 import { createCamera, createComposer, createRenderer, getDefaultUniforms, setupApp } from "./core-utils";
-import { maintainBgAspect } from "./common-utils"
+import { hexToRgb, maintainBgAspect } from "./common-utils"
 import { drawTriangleAsVertices } from "./functions"
 import Background from "./assets/stars-nebula.jpeg"
 import HeightMap from "./assets/heightmap-20x20.jpg"
 
 global.THREE = THREE
 
-// initialize core threejs components
-let scene = new THREE.Scene()
-let renderer = createRenderer({ antialias: true, alpha: true })
-let camera = createCamera(75, 0.1, 110, { x: 0, y: 0, z: 2.4 })
-let composer = createComposer(renderer, scene, camera, (comp) => {
-  const rgbShiftPass = new ShaderPass(RGBShiftShader)
-  rgbShiftPass.uniforms["amount"].value = 0.0015
-  comp.addPass(rgbShiftPass)
-})
-
 // app/scene params
 const guiOptions = {
-  speed: 4
+  // scene params
+  speed: 4,
+  ambientColor: 0x000888,
+  directionalColor: 0xff1600,
+  rgbShiftAmount: 0.002,
+  // plane params
+  metalness: 0.99,
+  roughness: 0.76,
+  meshColor: 0xffbc14,
+  meshEmissive: 0x000099,
+  lineColor: 0x4c93ff,
+  // sun params
+  topColor: 0xff18ff,
+  bottomColor: 0xffd81a
 }
 const uniforms = {
   ...getDefaultUniforms(),
-  color_main: { // used for the sun's base color
+  color_main: { // sun's top color
     value: {
       r: 1.0,
       g: 0.095,
-      b: 1.33
+      b: 1.0
     }
   },
-  color_accent: { // used for the color bands on the sun
+  color_accent: { // sun's bottom color
     value: {
       r: 1.0,
       g: 0.847,
@@ -54,19 +57,21 @@ const maxWidth = (width + 0.5) * 2 * radius
 const maxHeight = (height + 0.5) * 2 * radius
 const initialPosOffset = maxHeight / 2
 const lengthOfRepeat = maxHeight - radius
-const meshMetalness = 0.99
-const meshRoughness = 0.76
-const meshColor = "#ffbc14"
-const meshEmissive = "#009"
-const lineColor = 0x4c93ff
-const ambientColor = 0x000888
-const directionalColor = 0xff1600
-const fogColor = "#ff1655"
 const lightDir = {
   x: 0,
   y: 1,
   z: -5.5
 }
+
+// initialize core threejs components
+let scene = new THREE.Scene()
+let renderer = createRenderer({ antialias: true, alpha: true })
+let camera = createCamera(75, 0.1, 110, { x: 0, y: 0, z: 2.4 })
+let rgbShiftPass = new ShaderPass(RGBShiftShader)
+let composer = createComposer(renderer, scene, camera, (comp) => {
+  rgbShiftPass.uniforms["amount"].value = guiOptions.rgbShiftAmount
+  comp.addPass(rgbShiftPass)
+})
 
 /**
  * Define the threejs app object that consists of at least the async initScene() function (it is async so the animate function can wait for initScene to finish before being called)
@@ -160,10 +165,11 @@ let app = {
     await this.loadSceneBackground(this.scene)
 
     // Lighting
-    this.scene.add(new THREE.AmbientLight(ambientColor))
-    let dLight = new THREE.DirectionalLight(directionalColor)
-    dLight.position.set(lightDir.x, lightDir.y, lightDir.z)
-    this.scene.add(dLight)
+    this.ambientLight = new THREE.AmbientLight(guiOptions.ambientColor)
+    this.scene.add(this.ambientLight)
+    this.dirLight = new THREE.DirectionalLight(guiOptions.directionalColor)
+    this.dirLight.position.set(lightDir.x, lightDir.y, lightDir.z)
+    this.scene.add(this.dirLight)
 
     // the sun
     const sungeom = new THREE.SphereGeometry(30, 64, 64)
@@ -219,27 +225,31 @@ let app = {
       this.group = new THREE.Group()
 
       // the material of the plane geometry
-      const material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(meshColor),
-        emissive: new THREE.Color(meshEmissive),
-        metalness: meshMetalness,
-        roughness: meshRoughness,
-        // roughnessMap: roughMap,
+      this.meshMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(guiOptions.meshColor),
+        emissive: new THREE.Color(guiOptions.meshEmissive),
+        metalness: guiOptions.metalness,
+        roughness: guiOptions.roughness,
         polygonOffset: true,
         polygonOffsetFactor: 1, // positive value pushes polygon further away
         polygonOffsetUnits: 1
       })
       // wireframe of the plane geometry
       var wfgeo = new THREE.WireframeGeometry(geometry)
+      this.lineMaterial = new THREE.LineBasicMaterial({
+        color: guiOptions.lineColor,
+        linewidth: 1, // probably ignored by WebGLRenderer
+        linecap: 'round', //ignored by WebGLRenderer
+        linejoin: 'round' //ignored by WebGLRenderer
+      })
 
       this.meshGroup = []
       this.lineGroup = []
       // clone the remaining instances
       for (let i = 0; i < loopInstances; i++) {
         // create the meshes
-        let mesh = new THREE.Mesh(geometry, material)
-        let line = new THREE.LineSegments(wfgeo)
-        line.material.color.setHex(lineColor)
+        let mesh = new THREE.Mesh(geometry, this.meshMaterial)
+        let line = new THREE.LineSegments(wfgeo, this.lineMaterial)
         // set the correct pos and rot for both the terrain and its wireframe
         mesh.position.set(-radius * width, -1, -initialPosOffset - maxHeight * i + radius * i)
         mesh.rotation.x -= Math.PI / 2
@@ -262,7 +272,44 @@ let app = {
 
     // GUI
     const gui = new dat.GUI()
+
     gui.add(guiOptions, "speed", 1, 10, 0.5)
+    gui.addColor(guiOptions, 'ambientColor').name('ambient color').onChange((val) => {
+      this.ambientLight.color.set(val)
+    })
+    gui.addColor(guiOptions, 'directionalColor').name('sunlight color').onChange((val) => {
+      this.dirLight.color.set(val)
+    })
+    gui.add(guiOptions, "rgbShiftAmount", 0, 0.01, 0.0005).onChange((val) => {
+      rgbShiftPass.uniforms["amount"].value = val
+    })
+
+    planeFolder = gui.addFolder(`Plane`)
+    planeFolder.add(guiOptions, "metalness", 0, 1, 0.05).onChange((val) => {
+      this.meshMaterial.metalness = val
+    })
+    planeFolder.add(guiOptions, "roughness", 0, 1, 0.05).onChange((val) => {
+      this.meshMaterial.roughness = val
+    })
+    planeFolder.addColor(guiOptions, 'meshColor').name('color').onChange((val) => {
+      this.meshMaterial.color.set(val)
+    })
+    planeFolder.addColor(guiOptions, 'meshEmissive').name('emissive').onChange((val) => {
+      this.meshMaterial.emissive.set(val)
+    })
+    planeFolder.addColor(guiOptions, 'lineColor').name('wireframe color').onChange((val) => {
+      this.lineMaterial.color.set(val)
+    })
+
+    sunFolder = gui.addFolder(`Sun`)
+    sunFolder.addColor(guiOptions, 'topColor').name('top color').onChange((val) => {
+      let clr = new THREE.Color(val)
+      uniforms.color_main.value = hexToRgb(clr.getHexString(), true)
+    })
+    sunFolder.addColor(guiOptions, 'bottomColor').name('bottom color').onChange((val) => {
+      let clr = new THREE.Color(val)
+      uniforms.color_accent.value = hexToRgb(clr.getHexString(), true)
+    })
 
     // Stats - show fps
     this.stats1 = new Stats()

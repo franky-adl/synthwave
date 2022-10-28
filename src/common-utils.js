@@ -4,6 +4,28 @@ import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader"
 global.THREE = THREE
 
 /**
+ * 
+ * @param {string} hex hex string without or without # prefix
+ * @param {bool} forShaders if true, r,g,b components will be in 0..1 range
+ * @returns an object with r,g,b components
+ */
+export const hexToRgb = (hex, forShaders = false) => {
+    var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (forShaders) {
+        return result ? {
+            r: parseInt(result[1], 16) / 255,
+            g: parseInt(result[2], 16) / 255,
+            b: parseInt(result[3], 16) / 255
+        } : null;
+    }
+    return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+    } : null;
+}
+
+/**
  * @param {string} url - Path to equirectandular .hdr
  * @returns {Promise<THREE.Texture>}
  */
