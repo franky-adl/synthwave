@@ -11,15 +11,14 @@ import { createCamera, createComposer, createRenderer, getDefaultUniforms, setup
 import { setBackground } from "./common-utils"
 import { drawTriangleAsVertices } from "./functions"
 import Background from "./assets/stars-nebula.jpeg"
-import HeightMap from "./assets/heightmap-12.png"
-import SunTexture from "./assets/sun-texture-2.jpg"
+import HeightMap from "./assets/heightmap-20x20.jpg"
 
 global.THREE = THREE
 
 // initialize core threejs components
 let scene = new THREE.Scene()
 let renderer = createRenderer({ antialias: true, alpha: true })
-let camera = createCamera(75, 0.1, 100, { x: 0, y: 0, z: 2.4 })
+let camera = createCamera(75, 0.1, 110, { x: 0, y: 0, z: 2.4 })
 let composer = createComposer(renderer, scene, camera, (comp) => {
   const rgbShiftPass = new ShaderPass(RGBShiftShader)
   rgbShiftPass.uniforms["amount"].value = 0.0015
@@ -27,12 +26,30 @@ let composer = createComposer(renderer, scene, camera, (comp) => {
 })
 
 // app/scene params
-let guiOptions = {
+const guiOptions = {
   speed: 4
+}
+const uniforms = {
+  ...getDefaultUniforms(),
+  color_main: { // used for the sun's base color
+    value: {
+      r: 1.0,
+      g: 0.095,
+      b: 1.33
+    }
+  },
+  color_accent: { // used for the color bands on the sun
+    value: {
+      r: 1.0,
+      g: 0.847,
+      b: 0.1
+    }
+  }
 }
 const radius = 1 / (2 * Math.cos(Math.PI / 4))
 const width = 20
-const height = 50
+const height = 20
+const loopInstances = 5
 const maxWidth = (width + 0.5) * 2 * radius
 const maxHeight = (height + 0.5) * 2 * radius
 const initialPosOffset = maxHeight / 2
@@ -44,8 +61,6 @@ const meshEmissive = "#009"
 const lineColor = 0x4c93ff
 const ambientColor = 0x000888
 const directionalColor = 0xff1600
-const sunColor = "#ff1655"
-const sunHighColor = 0xffeb16
 const fogColor = "#ff1655"
 const lightDir = {
   x: 0,
@@ -61,7 +76,12 @@ const lightDir = {
 let app = {
   vertexShader() {
     return `
+      varying vec2 vUv;
+      varying vec3 vPos;
+
       void main() {
+        vUv = uv;
+        vPos = position;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); 
       }
       `
@@ -78,11 +98,19 @@ let app = {
       uniform vec2 u_resolution;
       uniform vec2 u_mouse;
       uniform float u_time;
+      uniform vec3 color_main;
+      uniform vec3 color_accent;
+      varying vec2 vUv;
+      varying vec3 vPos;
 
       void main() {
         vec2 st = gl_FragCoord.xy/u_resolution.xy;
 
-        gl_FragColor = vec4(vec3(0.0, st),1.0);
+        // TODO: explain the following calculations + attach graphtoy example
+        float x = vPos.y;
+        float osc = ceil(sin((3. - (x - u_time) / 1.5) * 5.) / 2. + 0.4 - floor((3. - x / 1.5) * 5. / TWO_PI) / 10.);
+        vec3 color = mix(color_accent, color_main, smoothstep(0.2, 1., vUv.y));
+        gl_FragColor = vec4(color, osc);
       }
       `
   },
@@ -130,6 +158,7 @@ let app = {
     this.scene.add(dLight)
 
     // see: https://gist.github.com/jawdatls/465d82f2158e1c4ce161
+    // load heightmap to a new image and read color data to build our buffer geometry
     const img = await this.loadImage(HeightMap, (img) => {
       var canvas = document.createElement("canvas")
       canvas.width = img.width
@@ -147,7 +176,7 @@ let app = {
         for (let x = 0; x < width; x++) {
           for (let i = 1; i <= 4; i++) {
             // triangle 1-4
-            drawTriangleAsVertices(i, x, y, vertices, radius, maxWidth, maxHeight, imageData)
+            drawTriangleAsVertices(i, x, y, vertices, radius, maxWidth, maxHeight, height, canvas.width, canvas.height, imageData)
           }
         }
       }
@@ -170,18 +199,18 @@ let app = {
       this.group = new THREE.Group()
 
       // the sun
-      const sungeom = new THREE.SphereGeometry(14, 64, 64)
-      const sunText = textureLoader.load(SunTexture)
-      const sunmat = new THREE.MeshBasicMaterial({
-        map: sunText
+      const sungeom = new THREE.SphereGeometry(30, 64, 64)
+      const sunmat = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: this.vertexShader(),
+        fragmentShader: this.fragmentShader(),
+        transparent: true
       })
-      // const sunmat = new THREE.MeshNormalMaterial()
       this.sun = new THREE.Mesh(sungeom, sunmat)
       this.scene.add(this.sun)
-      this.sun.position.set(0, 8, -60)
-      this.sun.rotation.x -= Math.PI / 2
+      this.sun.position.set(0, 16, -100)
 
-      // the actual mesh of the plane geometry
+      // the material of the plane geometry
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(meshColor),
         emissive: new THREE.Color(meshEmissive),
@@ -192,34 +221,32 @@ let app = {
         polygonOffsetFactor: 1, // positive value pushes polygon further away
         polygonOffsetUnits: 1
       })
-      this.mesh = new THREE.Mesh(geometry, material)
-      this.group.add(this.mesh)
-
-      // wireframe mesh of the plane geometry
+      // wireframe of the plane geometry
       var wfgeo = new THREE.WireframeGeometry(geometry)
-      this.line = new THREE.LineSegments(wfgeo)
-      this.line.material.color.setHex(lineColor)
-      this.group.add(this.line)
 
-      // set the correct pos and rot for both the terrain and its wireframe
-      this.mesh.position.set(-radius * width, -1, -initialPosOffset)
-      this.mesh.rotation.x -= Math.PI / 2
-      this.line.position.set(-radius * width, -1, -initialPosOffset)
-      this.line.rotation.x -= Math.PI / 2
+      this.meshGroup = []
+      this.lineGroup = []
+      // clone the remaining instances
+      for (let i = 0; i < loopInstances; i++) {
+        // create the meshes
+        let mesh = new THREE.Mesh(geometry, material)
+        let line = new THREE.LineSegments(wfgeo)
+        line.material.color.setHex(lineColor)
+        // set the correct pos and rot for both the terrain and its wireframe
+        mesh.position.set(-radius * width, -1, -initialPosOffset - maxHeight * i + radius * i)
+        mesh.rotation.x -= Math.PI / 2
+        line.position.set(-radius * width, -1, -initialPosOffset - maxHeight * i + radius * i)
+        line.rotation.x -= Math.PI / 2
+        // add the meshes to the group and arrays
+        this.group.add(mesh)
+        this.group.add(line)
+        this.meshGroup.push(mesh)
+        this.lineGroup.push(line)
+      }
 
-      // copy another set of objects for the looping animation
-      this.mesh2 = new THREE.Mesh(geometry, material)
-      this.line2 = new THREE.LineSegments(wfgeo)
-      this.line2.material.color.setHex(lineColor)
-      // set the pos and rot
-      this.mesh2.position.set(-radius * width, -1, -initialPosOffset - maxHeight + radius)
-      this.mesh2.rotation.x -= Math.PI / 2
-      this.line2.position.set(-radius * width, -1, -initialPosOffset - maxHeight + radius)
-      this.line2.rotation.x -= Math.PI / 2
-      this.group.add(this.mesh2)
-      this.group.add(this.line2)
-
+      // add the bunch of mesh instances to the scene
       this.scene.add(this.group)
+
       // debugging angles, to see if the gap is closed perfectly between the butt and the head
       // this.group.rotation.y -= Math.PI / 2
       // this.group.position.set(-15, 0, 4)
@@ -241,13 +268,12 @@ let app = {
     this.controls.update()
     this.stats1.update()
 
-    this.mesh.position.z = ((elapsed * guiOptions.speed) % lengthOfRepeat) - initialPosOffset
-    this.line.position.z = ((elapsed * guiOptions.speed) % lengthOfRepeat) - initialPosOffset
-
-    this.mesh2.position.z = ((elapsed * guiOptions.speed) % lengthOfRepeat) - initialPosOffset - maxHeight + radius
-    this.line2.position.z = ((elapsed * guiOptions.speed) % lengthOfRepeat) - initialPosOffset - maxHeight + radius
+    for (let i = 0; i < loopInstances; i++) {
+      this.meshGroup[i].position.z = ((elapsed * guiOptions.speed) % lengthOfRepeat) - initialPosOffset - maxHeight * i + radius * i
+      this.lineGroup[i].position.z = ((elapsed * guiOptions.speed) % lengthOfRepeat) - initialPosOffset - maxHeight * i + radius * i
+    }
   }
 }
 
 // App's only entrypoint
-setupApp(app, scene, renderer, camera, true, getDefaultUniforms(), composer)
+setupApp(app, scene, renderer, camera, true, uniforms, composer)
