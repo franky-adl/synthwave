@@ -96,9 +96,16 @@ export const setupApp = (app, scene, renderer, camera, enableAnimation = false, 
         }
     }
 
-    app.initScene().then(animate).catch((error) => {
-        console.log(error);
-    });
+    app.initScene()
+        .then(() => {
+            const veil = document.getElementById("veil")
+            veil.style.opacity = 0
+            return true
+        })
+        .then(animate)
+        .catch((error) => {
+            console.log(error);
+        });
 }
 
 /**

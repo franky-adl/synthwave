@@ -8,7 +8,7 @@ import { RGBShiftShader } from "three/examples/jsm/shaders/RGBShiftShader"
 
 // Your deps
 import { createCamera, createComposer, createRenderer, getDefaultUniforms, setupApp } from "./core-utils";
-import { setBackground } from "./common-utils"
+import { maintainBgAspect } from "./common-utils"
 import { drawTriangleAsVertices } from "./functions"
 import Background from "./assets/stars-nebula.jpeg"
 import HeightMap from "./assets/heightmap-20x20.jpg"
@@ -133,23 +133,31 @@ let app = {
     })
   },
 
+  // The Image.prototype.onload property is not a promise,
+  // if you want to chain events after image is loaded, should return a Promise for an await expression
+  // need to pass scene instead of using this.scene since the scope of this isn't the parent scope
+  loadSceneBackground(scene) {
+    return new Promise((resolve, reject) => {
+      var loader = new THREE.TextureLoader();
+      loader.load(Background, function (texture) {
+        scene.background = texture
+        maintainBgAspect(scene, texture.image.width, texture.image.height)
+        resolve()
+      }, undefined, function (error) {
+        console.log(error)
+        reject(error)
+      });
+    })
+  },
+
   // scene, renderer, composer, container and camera will have been defined as props of the app object by the time this is called
   async initScene() {
-    // init loaders
-    const textureLoader = new THREE.TextureLoader()
-
     // OrbitControls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true
 
     // Environment
-    var bgImg = new Image()
-    bgImg.onload = () => {
-      this.scene.background = textureLoader.load(bgImg.src)
-      setBackground(this.scene, bgImg.width, bgImg.height)
-    }
-    bgImg.src = Background
-    // this.scene.background = new THREE.Color("#222222")
+    await this.loadSceneBackground(this.scene)
 
     // Lighting
     this.scene.add(new THREE.AmbientLight(ambientColor))
@@ -157,9 +165,21 @@ let app = {
     dLight.position.set(lightDir.x, lightDir.y, lightDir.z)
     this.scene.add(dLight)
 
+    // the sun
+    const sungeom = new THREE.SphereGeometry(30, 64, 64)
+    const sunmat = new THREE.ShaderMaterial({
+      uniforms: uniforms,
+      vertexShader: this.vertexShader(),
+      fragmentShader: this.fragmentShader(),
+      transparent: true
+    })
+    this.sun = new THREE.Mesh(sungeom, sunmat)
+    this.scene.add(this.sun)
+    this.sun.position.set(0, 16, -100)
+
     // see: https://gist.github.com/jawdatls/465d82f2158e1c4ce161
     // load heightmap to a new image and read color data to build our buffer geometry
-    const img = await this.loadImage(HeightMap, (img) => {
+    await this.loadImage(HeightMap, (img) => {
       var canvas = document.createElement("canvas")
       canvas.width = img.width
       canvas.height = img.height
@@ -197,18 +217,6 @@ let app = {
       geometry.computeVertexNormals()
 
       this.group = new THREE.Group()
-
-      // the sun
-      const sungeom = new THREE.SphereGeometry(30, 64, 64)
-      const sunmat = new THREE.ShaderMaterial({
-        uniforms: uniforms,
-        vertexShader: this.vertexShader(),
-        fragmentShader: this.fragmentShader(),
-        transparent: true
-      })
-      this.sun = new THREE.Mesh(sungeom, sunmat)
-      this.scene.add(this.sun)
-      this.sun.position.set(0, 16, -100)
 
       // the material of the plane geometry
       const material = new THREE.MeshStandardMaterial({

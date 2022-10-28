@@ -23,7 +23,7 @@ export const loadHDRI = (url) => {
  * @param {*} backgroundImageWidth
  * @param {*} backgroundImageHeight
  */
-export const setBackground = (scene, backgroundImageWidth, backgroundImageHeight) => {
+export const maintainBgAspect = (scene, backgroundImageWidth, backgroundImageHeight) => {
     var windowSize = function (withScrollBar) {
         var wid = 0
         var hei = 0
