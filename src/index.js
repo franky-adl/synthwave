@@ -21,7 +21,7 @@ const guiOptions = {
   speed: 4,
   ambientColor: 0x000888,
   directionalColor: 0xff1600,
-  rgbShiftAmount: 0.002,
+  rgbShiftAmount: 0.0,
   pixelize: false,
   // plane params
   metalness: 0.99,
@@ -295,7 +295,7 @@ let app = {
       this.composer.setPixelRatio(targetPixelRatio * (val ? 0.2 : 1))
     })
 
-    planeFolder = gui.addFolder(`Plane`)
+    let planeFolder = gui.addFolder(`Plane`)
     planeFolder.add(guiOptions, "metalness", 0, 1, 0.05).onChange((val) => {
       this.meshMaterial.metalness = val
     })
@@ -312,7 +312,7 @@ let app = {
       this.lineMaterial.color.set(val)
     })
 
-    sunFolder = gui.addFolder(`Sun`)
+    let sunFolder = gui.addFolder(`Sun`)
     sunFolder.addColor(guiOptions, 'topColor').name('top color').onChange((val) => {
       let clr = new THREE.Color(val)
       uniforms.color_main.value = hexToRgb(clr.getHexString(), true)
