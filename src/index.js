@@ -21,7 +21,7 @@ const guiOptions = {
   speed: 4,
   ambientColor: 0x000888,
   directionalColor: 0xff1600,
-  rgbShiftAmount: 0.0,
+  rgbShiftAmount: 0.0015,
   pixelize: false,
   // plane params
   metalness: 0.99,
