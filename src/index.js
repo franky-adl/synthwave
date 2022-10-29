@@ -27,8 +27,8 @@ const guiOptions = {
   metalness: 0.99,
   roughness: 0.76,
   meshColor: 0xffbc14,
-  meshEmissive: 0x000099,
-  lineColor: 0x4c93ff,
+  meshEmissive: 0x173ef5,
+  lineColor: 0xffffff,
   // sun params
   topColor: 0xff18ff,
   bottomColor: 0xffd81a
@@ -63,13 +63,17 @@ const lightDir = {
   y: 1,
   z: -5.5
 }
+// make this a static number so the graphics will be consistent across devices with different window.devicePixelRatio
+// I think setting to 1 looks better than higher numbers as the wireframe lines look a bit thicker which is what i want
+const targetPixelRatio = 1
 
 // initialize core threejs components
 let scene = new THREE.Scene()
 // deactivating antialias gives performance boost
-let renderer = createRenderer({ antialias: false, alpha: true }, (rdr) => {
+let renderer = createRenderer({ antialias: false }, (rdr) => {
   // see https://discourse.threejs.org/t/renderer-info-render-triangles-always-on-0/28916
   rdr.info.autoReset = false
+  rdr.setPixelRatio(targetPixelRatio) // overriding default settings of window.devicePixelRatio
 })
 let camera = createCamera(75, 0.1, 110, { x: 0, y: 0, z: 2.4 })
 let rgbShiftPass = new ShaderPass(RGBShiftShader)
@@ -194,7 +198,6 @@ let app = {
       var canvas = document.createElement("canvas")
       canvas.width = img.width
       canvas.height = img.height
-      console.log(canvas.width, canvas.height)
 
       var context = canvas.getContext("2d")
       context.drawImage(img, 0, 0)
@@ -289,7 +292,7 @@ let app = {
       rgbShiftPass.uniforms["amount"].value = val
     })
     gui.add(guiOptions, "pixelize").onChange((val) => {
-      this.composer.setPixelRatio(window.devicePixelRatio * (val ? 0.1 : 1))
+      this.composer.setPixelRatio(targetPixelRatio * (val ? 0.2 : 1))
     })
 
     planeFolder = gui.addFolder(`Plane`)
