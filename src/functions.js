@@ -42,7 +42,7 @@ function getZFromImageDataPoint(imageData, u, v, cvWidth, cvHeight) {
  * @param {number} cvHeight the height of the heightmap image in canvas
  * @param {object} imageData image data of the displacement map
  */
-export const drawTriangleAsVertices = (triangle, x, y, vertices, radius, maxWidth, maxHeight, height, cvWidth, cvHeight, imageData) => {
+export const drawTriangleAsVertices = (triangle, x, y, vertices, radius, maxWidth, maxHeight, height, cvWidth, cvHeight, imageData, forLineGeom = false) => {
   let offset = 0,
     vts_xy = []
   if (triangle === 3 || triangle === 4) {
@@ -77,6 +77,10 @@ export const drawTriangleAsVertices = (triangle, x, y, vertices, radius, maxWidt
       x: 2 * radius + x * 2 * radius + offset,
       y: 0 - radius - y * 2 * radius - offset
     }) // 2nd triangle's initial val: (2 * radius, -radius)
+  }
+  // reverse triangle drawing order for odd rows (to keep the lines connecting the vertices in a correct order)
+  if (forLineGeom && y % 2 == 1) {
+    vts_xy.reverse()
   }
 
   // loop through the 3 vertices to form the triangle

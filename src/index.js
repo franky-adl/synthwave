@@ -3,8 +3,10 @@ import * as THREE from "three"
 import * as dat from 'dat.gui';
 import Stats from "three/examples/jsm/libs/stats.module"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls"
-import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass"
-import { RGBShiftShader } from "three/examples/jsm/shaders/RGBShiftShader"
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass"
+import { LineGeometry } from "three/examples/jsm/lines/LineGeometry"
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial"
+import { Line2 } from "three/examples/jsm/lines/Line2"
 
 // Your deps
 import { createCamera, createComposer, createRenderer, getDefaultUniforms, setupApp } from "./core-utils";
@@ -20,15 +22,19 @@ const guiOptions = {
   // scene params
   speed: 4,
   ambientColor: 0x000888,
-  directionalColor: 0xff1600,
-  rgbShiftAmount: 0.0015,
+  directionalColor: 0xff7800,
   pixelize: false,
+  // bloom params
+  bloomStrength: 0.5,
+  bloomRadius: 0.2,
+  bloomThreshold: 0.5,
   // plane params
   metalness: 0.99,
   roughness: 0.76,
-  meshColor: 0xffbc14,
-  meshEmissive: 0x173ef5,
-  lineColor: 0xffffff,
+  meshColor: 0xff1414,
+  meshEmissive: 0x0000CD,
+  lineWidth: 0.04,
+  lineColor: 0x00b3ff,
   // sun params
   topColor: 0xff18ff,
   bottomColor: 0xffd81a
@@ -69,17 +75,27 @@ const targetPixelRatio = 1
 
 // initialize core threejs components
 let scene = new THREE.Scene()
+
 // deactivating antialias gives performance boost
-let renderer = createRenderer({ antialias: false }, (rdr) => {
+// see https://threejs.org/manual/#en/cameras for why the need for logarithmicDepthBuffer
+let renderer = createRenderer({ antialias: true, logarithmicDepthBuffer: true }, (rdr) => {
   // see https://discourse.threejs.org/t/renderer-info-render-triangles-always-on-0/28916
   rdr.info.autoReset = false
-  rdr.setPixelRatio(targetPixelRatio) // overriding default settings of window.devicePixelRatio
+  // rdr.setPixelRatio(targetPixelRatio) // overriding default settings of window.devicePixelRatio
 })
-let camera = createCamera(75, 0.1, 110, { x: 0, y: 0, z: 2.4 })
-let rgbShiftPass = new ShaderPass(RGBShiftShader)
+
+// create the camera with an extra layer, don't set a near value being too small (depth test could run out of precision units)
+let camera = createCamera(75, 1, 110, { x: 0, y: 0, z: 2.4 })
+
+// Post-processing with Bloom effect
+let bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  guiOptions.bloomStrength,
+  guiOptions.bloomRadius,
+  guiOptions.bloomThreshold
+);
 let composer = createComposer(renderer, scene, camera, (comp) => {
-  rgbShiftPass.uniforms["amount"].value = guiOptions.rgbShiftAmount
-  comp.addPass(rgbShiftPass)
+  comp.addPass(bloomPass)
 })
 
 /**
@@ -214,13 +230,29 @@ let app = {
           }
         }
       }
+      // Build the vertices differently for the LineGeometry
+      // since the line geometry is a continuous line, I have to draw the triangles in a continuous fashion (correctly ordered)
+      // thus drawing even rows ltr, and odd rows rtl
+      const lineVertices = []
+      for (let y = 0; y < height; y++) {
+        for (let x = (y % 2 == 0 ? 0 : (width - 1)); (y % 2 == 0 ? (x <= (width - 1)) : (x >= 0)); (y % 2 == 0 ? x++ : x--)) {
+          for (let i = (y % 2 == 0 ? 1 : 4); (y % 2 == 0 ? (i <= 4) : (i >= 1)); (y % 2 == 0 ? i++ : i--)) {
+            // triangle 1-4
+            drawTriangleAsVertices(i, x, y, lineVertices, radius, maxWidth, maxHeight, height, canvas.width, canvas.height, imageData, true)
+          }
+        }
+      }
 
       // set up the BufferGeometry from vertices
       const positions = []
+      const linePositions = []
       const uvs = []
       for (const vertex of vertices) {
         positions.push(...vertex.pos)
         uvs.push(...vertex.uv)
+      }
+      for (const vertex of lineVertices) {
+        linePositions.push(...vertex.pos)
       }
       const geometry = new THREE.BufferGeometry()
       const positionNumComponents = 3
@@ -231,6 +263,7 @@ let app = {
       geometry.computeVertexNormals()
 
       this.group = new THREE.Group()
+      this.groupLines = new THREE.Group()
 
       // the material of the plane geometry
       this.meshMaterial = new THREE.MeshStandardMaterial({
@@ -238,17 +271,16 @@ let app = {
         emissive: new THREE.Color(guiOptions.meshEmissive),
         metalness: guiOptions.metalness,
         roughness: guiOptions.roughness,
-        polygonOffset: true,
-        polygonOffsetFactor: 1, // positive value pushes polygon further away
-        polygonOffsetUnits: 1
       })
-      // wireframe of the plane geometry
-      var wfgeo = new THREE.WireframeGeometry(geometry)
-      this.lineMaterial = new THREE.LineBasicMaterial({
+
+      // the grid lines, reference: https://threejs.org/examples/?q=line#webgl_lines_fat
+      let wfgeo = new LineGeometry()
+      wfgeo.setPositions(linePositions)
+      this.lineMaterial = new LineMaterial({
         color: guiOptions.lineColor,
-        linewidth: 1, // probably ignored by WebGLRenderer
-        linecap: 'round', //ignored by WebGLRenderer
-        linejoin: 'round' //ignored by WebGLRenderer
+        linewidth: guiOptions.lineWidth, // in world units with size attenuation, pixels otherwise
+        alphaToCoverage: false,
+        worldUnits: true // such that line width depends on world distance
       })
 
       this.meshGroup = []
@@ -257,7 +289,8 @@ let app = {
       for (let i = 0; i < loopInstances; i++) {
         // create the meshes
         let mesh = new THREE.Mesh(geometry, this.meshMaterial)
-        let line = new THREE.LineSegments(wfgeo, this.lineMaterial)
+        let line = new Line2(wfgeo, this.lineMaterial)
+        line.computeLineDistances()
         // set the correct pos and rot for both the terrain and its wireframe
         mesh.position.set(-radius * width, -1, -initialPosOffset - maxHeight * i + radius * i)
         mesh.rotation.x -= Math.PI / 2
@@ -265,13 +298,14 @@ let app = {
         line.rotation.x -= Math.PI / 2
         // add the meshes to the group and arrays
         this.group.add(mesh)
-        this.group.add(line)
+        this.groupLines.add(line)
         this.meshGroup.push(mesh)
         this.lineGroup.push(line)
       }
 
       // add the bunch of mesh instances to the scene
-      this.scene.add(this.group)
+      scene.add(this.group)
+      scene.add(this.groupLines)
 
       // debugging angles, to see if the gap is closed perfectly between the butt and the head
       // this.group.rotation.y -= Math.PI / 2
@@ -288,11 +322,19 @@ let app = {
     gui.addColor(guiOptions, 'directionalColor').name('sunlight color').onChange((val) => {
       this.dirLight.color.set(val)
     })
-    gui.add(guiOptions, "rgbShiftAmount", 0, 0.01, 0.0005).onChange((val) => {
-      rgbShiftPass.uniforms["amount"].value = val
-    })
     gui.add(guiOptions, "pixelize").onChange((val) => {
       this.composer.setPixelRatio(targetPixelRatio * (val ? 0.2 : 1))
+    })
+
+    let bloomFolder = gui.addFolder(`Bloom`)
+    bloomFolder.add(guiOptions, "bloomStrength", 0, 3, 0.1).onChange((val) => {
+      bloomPass.strength = Number(val)
+    })
+    bloomFolder.add(guiOptions, "bloomRadius", 0, 1, 0.1).onChange((val) => {
+      bloomPass.radius = Number(val)
+    })
+    bloomFolder.add(guiOptions, "bloomThreshold", 0, 1, 0.1).onChange((val) => {
+      bloomPass.threshold = Number(val)
     })
 
     let planeFolder = gui.addFolder(`Plane`)
@@ -308,8 +350,11 @@ let app = {
     planeFolder.addColor(guiOptions, 'meshEmissive').name('emissive').onChange((val) => {
       this.meshMaterial.emissive.set(val)
     })
-    planeFolder.addColor(guiOptions, 'lineColor').name('wireframe color').onChange((val) => {
+    planeFolder.addColor(guiOptions, 'lineColor').name('line color').onChange((val) => {
       this.lineMaterial.color.set(val)
+    })
+    planeFolder.add(guiOptions, "lineWidth", 0, 0.1, 0.01).name('line width').onChange((val) => {
+      this.lineMaterial.linewidth = val
     })
 
     let sunFolder = gui.addFolder(`Sun`)
