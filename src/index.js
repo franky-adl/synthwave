@@ -20,12 +20,12 @@ global.THREE = THREE
 // app/scene params
 const guiOptions = {
   // scene params
-  speed: 4,
+  speed: 2.5,
   ambientColor: 0x000888,
   directionalColor: 0xff7800,
   pixelize: false,
   // bloom params
-  bloomStrength: 0.5,
+  bloomStrength: 0.4,
   bloomRadius: 0.2,
   bloomThreshold: 0.5,
   // plane params
@@ -34,7 +34,7 @@ const guiOptions = {
   meshColor: 0xff1414,
   meshEmissive: 0x0000CD,
   lineWidth: 0.04,
-  lineColor: 0x00b3ff,
+  lineColor: 0xcee4ff,
   // sun params
   topColor: 0xff18ff,
   bottomColor: 0xffd81a
@@ -69,9 +69,6 @@ const lightDir = {
   y: 1,
   z: -5.5
 }
-// make this a static number so the graphics will be consistent across devices with different window.devicePixelRatio
-// I think setting to 1 looks better than higher numbers as the wireframe lines look a bit thicker which is what i want
-const targetPixelRatio = 1
 
 // initialize core threejs components
 let scene = new THREE.Scene()
@@ -81,7 +78,6 @@ let scene = new THREE.Scene()
 let renderer = createRenderer({ antialias: true, logarithmicDepthBuffer: true }, (rdr) => {
   // see https://discourse.threejs.org/t/renderer-info-render-triangles-always-on-0/28916
   rdr.info.autoReset = false
-  // rdr.setPixelRatio(targetPixelRatio) // overriding default settings of window.devicePixelRatio
 })
 
 // create the camera with an extra layer, don't set a near value being too small (depth test could run out of precision units)
@@ -327,13 +323,13 @@ let app = {
     })
 
     let bloomFolder = gui.addFolder(`Bloom`)
-    bloomFolder.add(guiOptions, "bloomStrength", 0, 3, 0.1).onChange((val) => {
+    bloomFolder.add(guiOptions, "bloomStrength", 0, 3, 0.05).onChange((val) => {
       bloomPass.strength = Number(val)
     })
-    bloomFolder.add(guiOptions, "bloomRadius", 0, 1, 0.1).onChange((val) => {
+    bloomFolder.add(guiOptions, "bloomRadius", 0, 1, 0.05).onChange((val) => {
       bloomPass.radius = Number(val)
     })
-    bloomFolder.add(guiOptions, "bloomThreshold", 0, 1, 0.1).onChange((val) => {
+    bloomFolder.add(guiOptions, "bloomThreshold", 0, 1, 0.05).onChange((val) => {
       bloomPass.threshold = Number(val)
     })
 
