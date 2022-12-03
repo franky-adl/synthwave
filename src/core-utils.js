@@ -70,11 +70,11 @@ export const setupApp = (app, scene, renderer, camera, enableAnimation = false, 
         window.addEventListener("mousemove", mouseListener)
     }
 
-    // Define your app
+    // set default empty callback for updateScene
     if (app.updateScene === undefined) {
         app.updateScene = (delta, elapsed) => { }
     }
-    Object.assign(app, { ...app, scene, camera, container, renderer, composer })
+    Object.assign(app, { ...app, container })
 
     // The engine that powers your scene into movement
     const clock = new THREE.Clock()

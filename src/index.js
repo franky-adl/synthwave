@@ -10,10 +10,10 @@ import { Line2 } from "three/examples/jsm/lines/Line2"
 
 // Your deps
 import { createCamera, createComposer, createRenderer, getDefaultUniforms, setupApp } from "./core-utils";
-import { hexToRgb, maintainBgAspect } from "./common-utils"
+import { hexToRgb, maintainBgAspect, loadImage } from "./common-utils"
 import { getZFromImageDataPoint } from "./functions"
 import Background from "./assets/Starfield.png"
-import HeightMap3 from "./assets/heightmap.png"
+import HeightMap from "./assets/heightmap.png"
 
 global.THREE = THREE
 
@@ -58,7 +58,7 @@ const uniforms = {
 }
 const terrainWidth = 30
 const terrainHeight = 30
-const loopInstances = 5
+const numOfMeshSets = 5
 const lightPos1 = {
   x: 15,
   y: 1,
@@ -71,6 +71,11 @@ const lightPos2 = {
   z: 5
 }
 const lightIntensity2 = 0.85
+const sunPos = {
+  x: 0,
+  y: 16,
+  z: -100
+}
 
 // initialize core threejs components
 let scene = new THREE.Scene()
@@ -102,6 +107,7 @@ let composer = createComposer(renderer, scene, camera, (comp) => {
  * if your app needs to animate things(i.e. not static), include a updateScene(interval, elapsed) function as well
  */
 let app = {
+  // vertexShader for the Sun
   vertexShader() {
     return `
       varying vec2 vUv;
@@ -114,6 +120,8 @@ let app = {
       }
       `
   },
+
+  // fragmentShader for the Sun
   fragmentShader() {
     return `
       #ifdef GL_ES
@@ -142,28 +150,13 @@ let app = {
       }
       `
   },
-  // set up objects in the scene only after the image is loaded
-  // because the code builds the vertexes from the loaded heightmap image
-  // so that we can use computeVertexNormals afterwards
-  // (normals aren't calculated for you if you use displacementMap property in the MeshStandardMaterial directly)
-  loadImage(path) {
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.crossOrigin = "Anonymous" // to avoid CORS if used with Canvas
-      img.src = path
-      img.onload = () => {
-        resolve(img)
-      }
-      img.onerror = (e) => {
-        reject(e)
-      }
-    })
-  },
 
-  // The Image.prototype.onload property is not a promise,
-  // if you want to chain events after image is loaded, should return a Promise for an await expression
-  // need to pass scene instead of using this.scene since the scope of this isn't the parent scope
-  loadSceneBackground(scene) {
+  /**
+   * Since the Image.prototype.onload property is not a promise,
+   * if you want to chain events after image is loaded, should return a Promise for an await expression
+   * @returns a Promise that resolves after the texture is loaded as the scene's background
+   */
+  loadSceneBackground() {
     return new Promise((resolve, reject) => {
       var loader = new THREE.TextureLoader();
       loader.load(Background, function (texture) {
@@ -177,43 +170,51 @@ let app = {
     })
   },
 
-  // scene, renderer, composer, container and camera will have been defined as props of the app object by the time this is called
+  /**
+   * Create all your objects and add them to the scene here
+   * This function is designed to be async such that the screen is unveiled only after this function is synchronously executed
+   * The animation also starts only after this function has been executed
+   */
   async initScene() {
     // OrbitControls
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement)
+    this.controls = new OrbitControls(camera, renderer.domElement)
     this.controls.enableDamping = true
 
     // Environment
-    await this.loadSceneBackground(this.scene)
+    await this.loadSceneBackground()
 
     // Lighting
     this.dirLight1 = new THREE.DirectionalLight(guiOptions.dirLightColor1, lightIntensity1)
     this.dirLight1.position.set(lightPos1.x, lightPos1.y, lightPos1.z)
-    this.scene.add(this.dirLight1)
+    scene.add(this.dirLight1)
     this.dirLight2 = new THREE.DirectionalLight(guiOptions.dirLightColor2, lightIntensity2)
     this.dirLight2.position.set(lightPos2.x, lightPos2.y, lightPos2.z)
-    this.scene.add(this.dirLight2)
+    scene.add(this.dirLight2)
 
     // the sun
-    const sungeom = new THREE.SphereGeometry(30, 64, 64)
-    const sunmat = new THREE.ShaderMaterial({
+    const sunGeom = new THREE.SphereGeometry(30, 64, 64)
+    const sunMat = new THREE.ShaderMaterial({
       uniforms: uniforms,
       vertexShader: this.vertexShader(),
       fragmentShader: this.fragmentShader(),
       transparent: true
     })
-    this.sun = new THREE.Mesh(sungeom, sunmat)
-    this.scene.add(this.sun)
-    this.sun.position.set(0, 16, -100)
+    this.sun = new THREE.Mesh(sunGeom, sunMat)
+    scene.add(this.sun)
+    this.sun.position.set(sunPos.x, sunPos.y, sunPos.z)
 
-    // create a set of objects according to each heightmap
+    // create sets of objects, for the capability to use different heightmaps for each set of plane and lines
     let planeGeometries = []
     let lineGeometries = []
     let geometryPositionsArray = []
+
+    // we only loop twice here, although we load a single HeightMap, the trick is:
+    // first loop we load the HeightMap the normal way
+    // second loop we load the HeightMap data horizontally inversed
     for (let i = 0; i < 2; i++) {
       // see: https://gist.github.com/jawdatls/465d82f2158e1c4ce161
       // load heightmap to a new image and read color data to set the heights of our plane vertices
-      let hm_image = await this.loadImage(HeightMap3)
+      let hm_image = await loadImage(HeightMap)
 
       var canvas = document.createElement("canvas")
       canvas.width = hm_image.width
@@ -287,11 +288,11 @@ let app = {
       lineGeometries.push(lineGeometry)
     }
 
-    this.group = new THREE.Group()
-    this.groupLines = new THREE.Group()
+    let group = new THREE.Group()
+    let groupLines = new THREE.Group()
 
     // the material of the plane geometry
-    this.meshMaterial = new THREE.MeshStandardMaterial({
+    let meshMaterial = new THREE.MeshStandardMaterial({
       color: new THREE.Color(guiOptions.meshColor),
       emissive: new THREE.Color(guiOptions.meshEmissive),
       metalness: guiOptions.metalness,
@@ -299,7 +300,7 @@ let app = {
       flatShading: true
     })
     // the material for the neon lines
-    this.lineMaterial = new LineMaterial({
+    let lineMaterial = new LineMaterial({
       color: guiOptions.lineColor,
       linewidth: guiOptions.lineWidth, // in world units with size attenuation, pixels otherwise
       alphaToCoverage: false,
@@ -308,11 +309,11 @@ let app = {
 
     this.meshGroup = []
     this.lineGroup = []
-    // clone the remaining instances
-    for (let i = 0; i < loopInstances; i++) {
+    // create the set of plane and line meshes, create multiple sets determined by numOfMeshSets
+    for (let i = 0; i < numOfMeshSets; i++) {
       // create the meshes
-      let mesh = new THREE.Mesh(planeGeometries[i % 2], this.meshMaterial)
-      let line = new Line2(lineGeometries[i % 2], this.lineMaterial)
+      let mesh = new THREE.Mesh(planeGeometries[i % 2], meshMaterial)
+      let line = new Line2(lineGeometries[i % 2], lineMaterial)
       line.computeLineDistances()
       // set the correct pos and rot for both the terrain and its wireframe
       mesh.position.set(0, -1.5, -terrainHeight * i)
@@ -320,29 +321,26 @@ let app = {
       line.position.set(0, -1.5, -terrainHeight * i)
       line.rotation.x -= Math.PI / 2
       // add the meshes to the group and arrays
-      this.group.add(mesh)
-      this.groupLines.add(line)
+      group.add(mesh)
+      groupLines.add(line)
       this.meshGroup.push(mesh)
       this.lineGroup.push(line)
     }
 
     // // add the bunch of mesh instances to the scene
-    scene.add(this.group)
-    scene.add(this.groupLines)
+    scene.add(group)
+    scene.add(groupLines)
 
 
     // GUI
     const gui = new dat.GUI()
 
-    gui.add(guiOptions, "speed", 1, 10, 0.5)
+    gui.add(guiOptions, "speed", 1, 10, 0.5).name('Plane speed')
     gui.addColor(guiOptions, 'dirLightColor1').name('Dir light 1').onChange((val) => {
       this.dirLight1.color.set(val)
     })
     gui.addColor(guiOptions, 'dirLightColor2').name('Dir light 2').onChange((val) => {
       this.dirLight2.color.set(val)
-    })
-    gui.add(guiOptions, "pixelize").onChange((val) => {
-      this.composer.setPixelRatio(targetPixelRatio * (val ? 0.2 : 1))
     })
 
     let bloomFolder = gui.addFolder(`Bloom`)
@@ -358,22 +356,22 @@ let app = {
 
     let planeFolder = gui.addFolder(`Plane`)
     planeFolder.add(guiOptions, "metalness", 0, 1, 0.05).onChange((val) => {
-      this.meshMaterial.metalness = val
+      meshMaterial.metalness = val
     })
     planeFolder.add(guiOptions, "roughness", 0, 1, 0.05).onChange((val) => {
-      this.meshMaterial.roughness = val
+      meshMaterial.roughness = val
     })
     planeFolder.addColor(guiOptions, 'meshColor').name('color').onChange((val) => {
-      this.meshMaterial.color.set(val)
+      meshMaterial.color.set(val)
     })
     planeFolder.addColor(guiOptions, 'meshEmissive').name('emissive').onChange((val) => {
-      this.meshMaterial.emissive.set(val)
+      meshMaterial.emissive.set(val)
     })
     planeFolder.addColor(guiOptions, 'lineColor').name('line color').onChange((val) => {
-      this.lineMaterial.color.set(val)
+      lineMaterial.color.set(val)
     })
     planeFolder.add(guiOptions, "lineWidth", 0, 0.1, 0.01).name('line width').onChange((val) => {
-      this.lineMaterial.linewidth = val
+      lineMaterial.linewidth = val
     })
 
     let sunFolder = gui.addFolder(`Sun`)
@@ -398,12 +396,12 @@ let app = {
     this.controls.update()
     this.stats1.update()
 
-    for (let i = 0; i < loopInstances; i++) {
+    for (let i = 0; i < numOfMeshSets; i++) {
       this.meshGroup[i].position.z += interval * guiOptions.speed
       this.lineGroup[i].position.z += interval * guiOptions.speed
       if (this.meshGroup[i].position.z >= terrainHeight) {
-        this.meshGroup[i].position.z -= loopInstances * terrainHeight
-        this.lineGroup[i].position.z -= loopInstances * terrainHeight
+        this.meshGroup[i].position.z -= numOfMeshSets * terrainHeight
+        this.lineGroup[i].position.z -= numOfMeshSets * terrainHeight
       }
     }
   }
